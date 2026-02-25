@@ -1,42 +1,16 @@
 ---
-title: "Building an AI Agent Skill for Clean Architecture"
-description: "How I built an open-source Skill for Claude and Copilot that enforces BLoC + Clean Architecture patterns, and what I learned about prompt engineering for code generation."
+title: "Teaching an AI to respect your architecture"
+description: "An open-source Skill for Claude and Copilot that encodes BLoC and Clean Architecture rules as decision trees for code generation."
 date: "2026-01-26"
 tags: ["AI Agents", "Claude Skills", "Flutter", "BLoC", "Open Source"]
 ---
 
-## Context & Motivation
+AI coding assistants generate Flutter code that compiles fine and quietly breaks your architecture. Business logic leaks into widgets, colors get hardcoded directly in the view layer, loading states get skipped entirely, everything ends up coupled to everything else. You catch it in review, fix it, and the next generation does the same thing again. After a while you start wondering if there's a better way to deal with this than reviewing AI output forever.
 
-AI coding assistants are powerful, but they generate Flutter code that ignores architecture rules. They mix business logic into widgets, hardcode colors, skip loading states, and create tightly-coupled components. I wanted to fix this at the instruction level — not by reviewing generated code, but by teaching the AI to generate correct architecture from the start.
+A Skill is a structured instruction set that Claude or Copilot reads before it touches your codebase. The idea is to encode not just what the architecture is but how to apply it in any situation. Instead of saying "use BLoC", it specifies the exact data flow: UI dispatches an event, the BLoC emits a loading state, the repository calls the datasource, the datasource hits the backend, the result comes back up and the BLoC emits success or error, the UI rebuilds. That whole chain is spelled out. Directory structure is feature-first with `bloc/`, `data/`, and `view/` folders under each feature. Every color, spacing value and typography style comes from a design token, `AppColors`, `AppSpacing`, `AppTypography`. Nothing hardcoded.
 
-## Architecture
+<SkillArchitecture />
 
-The Skill is a structured set of instructions that AI coding assistants (Claude, Copilot) read before generating code. It enforces:
+The tricky part was writing the decision tree. The Skill has to work for different situations: someone starting a new feature from scratch, someone adding a widget to something that already exists, someone integrating a new data source, someone refactoring old code. Each path through that tree needs enough specificity to produce consistent output without being so many rules that the model loses track. Too strict and the AI starts ignoring constraints. Too loose and it falls back on patterns from training that have nothing to do with your codebase. What actually helped was including working code examples alongside the rules. Showing the model what correct output looks like works better than describing what to avoid.
 
-- **Feature-first directory structure** — each feature has `bloc/`, `data/`, and `view/` subdirectories
-- **Strict data flow** — `UI Event → BLoC (emit Loading) → Repository → Datasource → Backend → BLoC (emit Success/Error) → UI`
-- **Design system compliance** — `AppColors`, `AppSpacing`, `AppRadius`, `AppTypography` constants. Zero hardcoded values.
-- **BlocConsumer pattern** — combined listen + build for state management
-- **Equatable** on all Events and States for proper equality comparison
-- **Barrel files** for clean imports per layer
-
-The Skill includes a decision tree that guides the AI through different scenarios: creating a new feature, adding a widget, integrating a data source, or refactoring existing code.
-
-## Community Response
-
-The Skill reached **10 GitHub stars** and was endorsed by **Felix Angelov**, the creator of the BLoC library. This validation confirmed that the patterns encoded in the Skill align with the BLoC community's best practices.
-
-## Challenges & Trade-offs
-
-**Instruction precision** — AI agents interpret instructions literally. Saying "use proper architecture" produces inconsistent results. Saying "create `lib/[feature]/bloc/[feature]_bloc.dart` with events extending Equatable" produces consistent, correct code.
-
-**Decision tree complexity** — Covering all scenarios (new feature, widget, data integration, refactoring) in a single instruction set requires careful branching. Too many rules and the AI gets confused; too few and it falls back to bad patterns.
-
-**Working examples vs rules** — I found that including working code examples alongside the rules dramatically improved compliance. The AI learns better from "here's what correct looks like" than "here's what you must not do."
-
-## Lessons Learned
-
-- AI Skills are the most leveraged form of engineering — you write instructions once, and every AI interaction with your codebase follows them
-- Prompt engineering for code architecture is a real skill — it requires understanding both the target architecture and how LLMs interpret instructions
-- Open source AI Skills create network effects — once shared, they improve across the entire community
-- The gap between "AI can write code" and "AI can write architecturally correct code" is enormous, but bridgeable
+It picked up 10 stars on GitHub and Felix Angelov, the creator of the BLoC library, gave it a shoutout. That last part was a good sign that the patterns were at least in the right direction.

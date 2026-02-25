@@ -1,39 +1,20 @@
 ---
-title: "Building a Distributed ML Pipeline with Kafka and gRPC"
-description: "How I architected a multi-node training system with Kafka event streaming, gRPC model exchange, and LSTM autoencoders — and what I learned about distributed coordination and aggregation strategies."
+title: "How I trained ML models across distributed nodes without moving any data"
+description: "A federated learning pipeline for 5G anomaly detection using Kafka, gRPC, and LSTM autoencoders."
 date: "2025-03-15"
 tags: ["Kafka", "TensorFlow", "gRPC", "Docker", "Distributed Systems", "Python"]
 ---
 
-## Context & Motivation
+The usual approach to anomaly detection is to collect data from all your nodes, dump it somewhere central, and train on it there. That works fine until the data is sensitive, the nodes are remote, or the volume makes centralizing it impractical. Federated learning is the alternative: each node trains locally on its own data and only the model weights travel across the network, never the raw data itself. I wanted to build this properly end to end, so I did.
 
-Anomaly detection in 5G networks is a critical problem. Network nodes generate massive amounts of telemetry data — CPU, memory, network, disk metrics — and centralizing all of it for training creates both bandwidth bottlenecks and data privacy concerns. Federated Learning solves this by training models locally on each node and only exchanging model weights.
+The system has five modules, each running in its own Docker container. `DB_Splitter` takes the dataset and partitions it across nodes before anything starts, simulating the reality of data being distributed. `FLClients` is the code that runs on each node. `FLServer` is the aggregation side. `FLInference` handles real-time scoring once the model is trained. `FLConfig` holds configuration shared across all of them.
 
-This project was built to explore whether federated learning could work effectively for real-time anomaly detection in a distributed 5G environment.
+<FedSAArchitecture />
 
-## Architecture
+On each client, network metrics come in through Kafka. I wrote a `ProducerConsumer` class that uses threads and semaphores to keep the data pipeline running, with freshness tracking so the training process doesn't accidentally learn from stale samples. The model is an LSTM autoencoder. It learns to reconstruct normal traffic patterns, so when something anomalous happens the reconstruction error spikes and you catch it. Training happens entirely locally and the raw data never leaves the node.
 
-The system consists of four main components:
+After each round of local training, the client serializes its model weights with Protobuf and sends them to the server over gRPC. The server collects weights from all clients and runs FedAvg to produce an updated global model, then pushes it back out. I also implemented FedAvgM which adds momentum to the aggregation, and a semi-async variant that doesn't wait for all nodes to finish before aggregating. That last one noticeably improved convergence time because in any real distributed setup some nodes are just slower, and blocking on the slowest one hurts everyone.
 
-1. **Data Pipeline** — Kafka streams network metrics from simulated eNBs (evolved Node Bs) to distributed training clients. A custom `ProducerConsumer` class uses thread-based producer/consumer pairs with semaphore synchronization and data freshness tracking.
+<FedSARoundFlow />
 
-2. **Training Clients** — Each client trains an LSTM autoencoder locally on its own data. The autoencoder learns to reconstruct normal network behavior — anomalies produce high reconstruction error (MSE).
-
-3. **Aggregation Server** — A gRPC server that implements multiple federated aggregation strategies: FedAvg (standard averaging), FedAvgM (with momentum of 0.9), and semi-async aggregation (configurable waiting times for stragglers).
-
-4. **Inference Engine** — The global model performs real-time anomaly detection using MSE-based scoring with quantile thresholds (0.999).
-
-## Challenges & Trade-offs
-
-**Semi-async vs synchronous aggregation** — Synchronous FedAvg requires all clients to finish before aggregation. In a real network, some nodes are slower. Semi-async aggregation allows the server to proceed after a configurable wait, which improved convergence time by ~30% in our tests.
-
-**Model staleness** — When using async aggregation, some clients train on outdated global models. I implemented a background thread that polls for global model updates to minimize staleness.
-
-**Kafka consumer group tuning** — Getting the right balance between consumer group size, batch size, and data freshness thresholds required significant experimentation.
-
-## Lessons Learned
-
-- Federated learning is not just "distributed training" — the aggregation strategy matters enormously for convergence
-- NTP time synchronization across nodes is not optional — without it, data freshness tracking breaks down
-- Docker orchestration for multi-node ML systems requires careful memory management (LSTM models can grow large)
-- gRPC's max message size default (4MB) is far too small for model weight transfer — I had to increase it to 390MB
+Two things that caused more friction than expected. gRPC has a default max message size of 4MB. LSTM model weights are nowhere near that small, I had to raise the limit to 390MB. The other one was NTP. The freshness tracking logic compares timestamps across nodes to decide whether a sample is recent enough to train on. If the clocks on different machines are even slightly out of sync the logic breaks and you start training on old data without realizing it.

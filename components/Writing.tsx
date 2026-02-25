@@ -37,9 +37,6 @@ export function Writing({ articles }: { articles: Article[] }) {
                     <h3 className="text-base font-medium text-text-primary group-hover:text-accent transition-colors">
                       {article.title}
                     </h3>
-                    <p className="text-sm text-text-muted mt-1">
-                      {article.description}
-                    </p>
                   </div>
                   <div className="flex items-center gap-3 shrink-0 mt-1">
                     <span className="text-xs text-text-muted font-mono hidden sm:block">

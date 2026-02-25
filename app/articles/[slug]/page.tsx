@@ -4,6 +4,17 @@ import { ArrowLeft, Clock, Calendar } from "lucide-react";
 import { MDXRemote } from "next-mdx-remote/rsc";
 import { getArticleBySlug, getArticleSlugs } from "@/lib/articles";
 import { Badge } from "@/components/ui/Badge";
+import { FedSAArchitecture, FedSARoundFlow } from "@/components/diagrams/FedSADiagram";
+import { C10KArchitecture, C10KRequestFlow } from "@/components/diagrams/C10KDiagram";
+import { SkillArchitecture } from "@/components/diagrams/SkillDiagram";
+
+const mdxComponents = {
+  FedSAArchitecture,
+  FedSARoundFlow,
+  C10KArchitecture,
+  C10KRequestFlow,
+  SkillArchitecture,
+};
 
 export function generateStaticParams() {
   return getArticleSlugs().map((slug) => ({ slug }));
@@ -76,7 +87,7 @@ export default async function ArticlePage({
         </header>
 
         <div className="prose-custom">
-          <MDXRemote source={article.content} />
+          <MDXRemote source={article.content} components={mdxComponents} />
         </div>
       </article>
     </div>

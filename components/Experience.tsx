@@ -28,16 +28,9 @@ export function Experience() {
                     {exp.period}
                   </span>
                 </div>
-                <ul className="space-y-2">
-                  {exp.points.map((point, j) => (
-                    <li
-                      key={j}
-                      className="text-sm text-text-secondary leading-relaxed pl-4 relative before:content-['·'] before:absolute before:left-0 before:text-text-muted"
-                    >
-                      {point}
-                    </li>
-                  ))}
-                </ul>
+                <p className="text-sm text-text-secondary leading-relaxed">
+                  {exp.description}
+                </p>
               </div>
             </AnimatedSection>
           ))}

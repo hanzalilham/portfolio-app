@@ -1,39 +1,24 @@
 ---
-title: "Building a C10K HTTP Server from Scratch in C++"
-description: "Designing a multi-threaded, event-driven HTTP server that handles 10,000 concurrent connections using kqueue and epoll — and what the C10K problem teaches about systems design."
+title: "I built an HTTP server from scratch to understand why nginx works the way it does"
+description: "Implementing the C10K problem in C++ with kqueue, a thread pool, and an Express-style routing API."
 date: "2025-02-10"
-tags: ["C++17", "kqueue", "epoll", "Multi-threading", "Systems Programming"]
+tags: ["C++", "kqueue", "Systems Programming", "Multi-threading"]
 ---
 
-## Context & Motivation
+The C10K problem is old. 1999. The question was simple: can a single server handle 10,000 concurrent connections? The answer shaped everything we use today, nginx, Node.js, the whole event-driven model. I wanted to understand it from the inside, not just accept the abstractions, so I built a server from scratch. No HTTP libraries, no frameworks, just POSIX sockets and kqueue.
 
-The C10K problem — handling 10,000 concurrent connections on a single server — was first articulated in 1999 and drove the development of modern event-driven architectures (nginx, Node.js, etc.). I wanted to understand the problem at the deepest level by building a solution from scratch in C++.
+The server is built around kqueue, the macOS kernel event API. You register file descriptors with the kernel and it tells you when something is ready to read or write, instead of you spinning in a loop checking. The key thing about kqueue is that you're not blocking on individual sockets. One thread can sit in `kevent()` and get notified about thousands of connections at once.
 
-No frameworks. No libraries. Just POSIX sockets, kernel event mechanisms, and threads.
+<C10KArchitecture />
 
-## Architecture
+That single thread hands work off to a pool of worker threads. The naive way to do this is a shared queue with a mutex. It works but every thread contends for the same lock, and under real load that becomes the bottleneck. Instead I gave each worker its own queue. New connections get assigned round-robin across workers. No shared mutable state on the hot path, no contention. The tradeoff is that if one connection does a lot of work, that worker's queue fills up while others are idle, but in practice with HTTP traffic that rarely matters.
 
-The server follows a layered, polymorphic design:
+Each worker reads from its socket with non-blocking I/O. When you call `recv` on a non-blocking socket and there's no data, you get `EAGAIN` back instead of blocking. You have to handle that properly and wait for the next event notification. If you miss it you never hear about it again because kqueue is edge-triggered by nature for this kind of setup.
 
-- **Polling abstraction** — An abstract `Polling` interface with `MacPolling` (kqueue) and `LinuxPolling` (epoll) implementations. A `PollingFactory` uses `#ifdef` to select the right implementation at compile time. Zero runtime overhead.
+HTTP parsing was more annoying than I expected. You're looking for `\r\n\r\n` to find the end of headers, but with non-blocking reads you might get half a request across two calls. The parser has to be stateful across reads, validate the method, check the version, handle malformed requests without crashing. It's one of those things that looks trivial until you write it.
 
-- **Thread pool** — N worker threads, each owning its own event queue. New connections are distributed via round-robin. This eliminates lock contention entirely — no shared queue, no mutexes on the hot path.
+The routing API ended up looking a lot like Express. You call `app.get("/path", handler)` and internally it stores a `std::function` bound to that path. When a request comes in, it matches against the registered routes and calls the handler. Modern C++ makes this kind of thing genuinely clean to write.
 
-- **Edge-triggered events** — Linux polling uses `EPOLLET` for maximum efficiency. The server must drain all available data on each event notification.
+A few practical things that aren't obvious until you run it. The default file descriptor limit on macOS is 256, sometimes 1024. You have to call `setrlimit(RLIMIT_NOFILE, 10000)` before doing anything else or you'll hit the limit almost immediately and connections start failing silently. `SO_REUSEADDR` is also something you want set from day one, otherwise every time you restart during development you spend 30 seconds waiting for the socket to time out.
 
-- **Express-style API** — Route registration uses `app.get("/path", handler)` syntax with `std::function` and lambdas for clean, composable handlers.
-
-## Challenges & Trade-offs
-
-**Edge-triggered vs level-triggered** — Edge-triggered is more efficient (fewer syscalls) but much harder to implement correctly. Missing a single read event means data is lost forever. I had to implement careful `EAGAIN` handling and non-blocking I/O throughout.
-
-**One queue per worker vs shared queue** — A shared event queue with locks is simpler but creates contention under high load. One queue per worker eliminates this entirely at the cost of slightly uneven load distribution.
-
-**HTTP parsing** — Writing a correct HTTP/1.1 parser by hand is surprisingly tricky. Handling `\r\n\r\n` body separator detection, validating HTTP methods and versions, and dealing with partial reads across non-blocking socket calls required careful state management.
-
-## Lessons Learned
-
-- `setrlimit(RLIMIT_NOFILE, 10000)` is required — the default fd limit on most systems is 1024
-- `SO_REUSEADDR` and `SO_REUSEPORT` are essential for development (avoid "Address already in use" during restarts)
-- Signal handling (`SIGINT`) for graceful shutdown is not optional in a server that manages thousands of fds
-- The Express.js API pattern translates beautifully to C++ with `std::function` and lambdas
+<C10KRequestFlow />

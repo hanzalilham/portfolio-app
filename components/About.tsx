@@ -9,13 +9,12 @@ export function About() {
         <AnimatedSection>
           <div className="max-w-3xl">
             <p className="text-text-secondary text-lg leading-relaxed">
-              Two years building 5G infrastructure at Ericsson — gRPC, protobuf,
-              unix sockets, modular monolith architecture in C++. Now at
-              Amadeus, where I modernize CI/CD infrastructure on Azure,
-              integrate messaging pipelines, and drive GenAI adoption across
-              engineering workflows. Outside of work, I architect distributed AI
-              systems, build real-time streaming pipelines, and ship mobile
-              platforms end-to-end.
+              Started in telecom. Two years writing C++ for 5G infrastructure
+              that runs at Bouygues, Jio, and Verizon. Now at Amadeus working on
+              the build toolchain the whole engineering org depends on. Outside
+              of work I build things end-to-end: a wearable that transcribes
+              voice into structured notes, distributed ML systems, mobile apps.
+              I ship, then write about what I learned.
             </p>
           </div>
         </AnimatedSection>

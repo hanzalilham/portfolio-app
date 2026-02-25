@@ -7,7 +7,6 @@ import { motion, AnimatePresence } from "framer-motion";
 
 const links = [
   { href: "/#projects", label: "Projects" },
-  { href: "/#writing", label: "Writing" },
   { href: "/#experience", label: "Experience" },
 ];
 
@@ -22,12 +21,7 @@ export function Navbar() {
             href="/"
             className="flex items-center gap-2.5 text-sm font-medium text-text-primary hover:text-text-secondary transition-colors"
           >
-            <img
-              src="/profile.jpg"
-              alt="Razi"
-              className="w-7 h-7 rounded-full object-cover"
-            />
-            razi
+            sonchau.dev
           </Link>
 
           <div className="hidden md:flex items-center gap-8">
