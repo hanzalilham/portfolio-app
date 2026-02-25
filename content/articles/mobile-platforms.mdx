@@ -1,0 +1,46 @@
+---
+title: "Two Mobile Platforms, Two Backend Paradigms"
+description: "Shipping a ride-hailing app with Supabase/PostgreSQL and a scheduling app with Firebase — comparing RPC vs REST, relational vs document, and when to use each."
+date: "2025-01-08"
+tags: ["Flutter", "Supabase", "Firebase", "BLoC", "PostgreSQL", "Stripe"]
+---
+
+## Context & Motivation
+
+Building two production mobile platforms gave me the opportunity to compare fundamentally different backend architectures: Supabase (relational, PostgreSQL, RPC-first) vs Firebase (document-based, NoSQL, SDK-first). Each choice has real trade-offs that only become apparent when you ship.
+
+## Architecture
+
+### driver_app — Supabase + PostgreSQL RPC
+
+The ride-hailing platform uses Supabase as its backend, but not in the typical "Supabase as Firebase replacement" way. Instead of using the Supabase client for direct table queries, the app calls **PostgreSQL RPC functions**:
+
+- Functions are defined with `LANGUAGE sql STABLE SECURITY DEFINER` — they run with elevated privileges, centralizing access control in the database layer
+- A **service-role client** bypasses Row-Level Security for operations that need cross-user data access
+- Driver discovery uses rating-based sorting with multi-field text search across name, business name, and vehicle
+- SQL functions are versioned in a `SETUP_SQL.sql` file alongside the app code
+
+### doozyJo — Firebase + BLoC
+
+The scheduling app takes the Firebase approach:
+
+- **BLoC state management** — strict separation of UI from business logic with event-driven state transitions
+- **Google Calendar API** integration via the `googleapis` package for syncing schedules
+- **Multi-platform** — iOS, Android, and macOS from a single codebase
+- **i18n** — multi-language support from day one
+- Recording features with custom nav bar animations during recording states
+
+## Challenges & Trade-offs
+
+**Supabase RPC vs direct queries** — RPC functions are more work upfront but give you full control over query optimization, security, and data shapes. Direct Supabase queries are faster to write but harder to optimize and secure.
+
+**SECURITY DEFINER** — Running functions with definer privileges is powerful but dangerous. A bug in the SQL function could expose data across users. The trade-off is worth it for complex multi-user queries, but you need thorough testing.
+
+**Firebase vs Supabase** — Firebase is faster to prototype with (real-time out of the box, push notifications, analytics). Supabase gives you PostgreSQL's full power (joins, CTEs, window functions, PostGIS). Choose based on your data model complexity.
+
+## Lessons Learned
+
+- Supabase RPC functions are underrated — they give you the best of both worlds: a managed backend with the power of raw SQL
+- BLoC is verbose but pays off at scale — the boilerplate is worth it when you have complex state interactions
+- Multi-platform Flutter (including macOS) requires careful testing — platform-specific APIs behave differently
+- Stripe integration is 80% API design, 20% code — getting the payment flow right matters more than the implementation

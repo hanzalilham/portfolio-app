@@ -1,0 +1,39 @@
+---
+title: "Building a C10K HTTP Server from Scratch in C++"
+description: "Designing a multi-threaded, event-driven HTTP server that handles 10,000 concurrent connections using kqueue and epoll — and what the C10K problem teaches about systems design."
+date: "2025-02-10"
+tags: ["C++17", "kqueue", "epoll", "Multi-threading", "Systems Programming"]
+---
+
+## Context & Motivation
+
+The C10K problem — handling 10,000 concurrent connections on a single server — was first articulated in 1999 and drove the development of modern event-driven architectures (nginx, Node.js, etc.). I wanted to understand the problem at the deepest level by building a solution from scratch in C++.
+
+No frameworks. No libraries. Just POSIX sockets, kernel event mechanisms, and threads.
+
+## Architecture
+
+The server follows a layered, polymorphic design:
+
+- **Polling abstraction** — An abstract `Polling` interface with `MacPolling` (kqueue) and `LinuxPolling` (epoll) implementations. A `PollingFactory` uses `#ifdef` to select the right implementation at compile time. Zero runtime overhead.
+
+- **Thread pool** — N worker threads, each owning its own event queue. New connections are distributed via round-robin. This eliminates lock contention entirely — no shared queue, no mutexes on the hot path.
+
+- **Edge-triggered events** — Linux polling uses `EPOLLET` for maximum efficiency. The server must drain all available data on each event notification.
+
+- **Express-style API** — Route registration uses `app.get("/path", handler)` syntax with `std::function` and lambdas for clean, composable handlers.
+
+## Challenges & Trade-offs
+
+**Edge-triggered vs level-triggered** — Edge-triggered is more efficient (fewer syscalls) but much harder to implement correctly. Missing a single read event means data is lost forever. I had to implement careful `EAGAIN` handling and non-blocking I/O throughout.
+
+**One queue per worker vs shared queue** — A shared event queue with locks is simpler but creates contention under high load. One queue per worker eliminates this entirely at the cost of slightly uneven load distribution.
+
+**HTTP parsing** — Writing a correct HTTP/1.1 parser by hand is surprisingly tricky. Handling `\r\n\r\n` body separator detection, validating HTTP methods and versions, and dealing with partial reads across non-blocking socket calls required careful state management.
+
+## Lessons Learned
+
+- `setrlimit(RLIMIT_NOFILE, 10000)` is required — the default fd limit on most systems is 1024
+- `SO_REUSEADDR` and `SO_REUSEPORT` are essential for development (avoid "Address already in use" during restarts)
+- Signal handling (`SIGINT`) for graceful shutdown is not optional in a server that manages thousands of fds
+- The Express.js API pattern translates beautifully to C++ with `std::function` and lambdas

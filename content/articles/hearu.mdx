@@ -1,0 +1,49 @@
+---
+title: "Real-Time Audio Transcription with AWS Transcribe Streaming"
+description: "Implementing the AWS EventStream protocol from scratch in Dart, bidirectional HTTP/2 streaming, and building a Spring Boot backend with JWT auth."
+date: "2024-10-20"
+tags: ["Flutter", "AWS Transcribe", "HTTP/2", "Spring Boot", "JWT", "PostgreSQL"]
+---
+
+## Context & Motivation
+
+Most transcription apps use batch processing — record audio, upload it, wait for results. I wanted real-time: speak into your phone and see text appear as you talk. AWS Transcribe Streaming supports this, but there's no official Dart/Flutter SDK for it. I had to implement the entire protocol from scratch.
+
+## Architecture
+
+### Frontend — Custom AWS Streaming in Flutter
+
+The transcription pipeline is a composable chain of Dart `StreamTransformer`s:
+
+1. **AudioDataChunker(6400)** — Chunks raw PCM audio into 6400-byte frames
+2. **AudioEventEncoder** — Wraps chunks in AWS event format
+3. **EventStreamEncoder** — Encodes to EventStream binary format
+4. **AudioMessageSigner** — Signs each message using SigV4 with `EventStreamMessageSigner`
+5. **DataStreamMessageEncoder** — Final HTTP/2 data frame encoding
+
+The connection uses a TLS `SecureSocket` with ALPN `h2` protocol to `transcribestreaming.us-east-1.amazonaws.com:443`, creating a bidirectional HTTP/2 stream.
+
+### Backend — Spring Boot REST API
+
+A clean Spring Boot 3.4 application with:
+
+- **Stateless JWT authentication** — HMAC-SHA256 signed tokens, 30-day expiration, extracted via a custom `OncePerRequestFilter`
+- **BCrypt password hashing** — through Spring Security's `DaoAuthenticationProvider`
+- **JPA entities** — User, Note, Folder with `@ManyToOne` and `@ManyToMany` relationships
+- **RESTful API** — Full CRUD for notes and folders, scoped to authenticated users
+- **Docker deployment** — Eclipse Temurin JDK, single JAR, deployed on Render
+
+## Challenges & Trade-offs
+
+**SigV4 signing for streaming** — AWS requires each frame in a streaming request to be individually signed, with each signature chaining from the previous one. Getting the signing chain right (initial request signature → first frame signature → second frame signature → ...) was the hardest part.
+
+**HTTP/2 in Dart** — The `http2` package works but has minimal documentation. Figuring out how to create a client transport connection, open a stream, and handle bidirectional data required reading the package source code.
+
+**Spring Security filter chain** — Getting the `JwtAuthenticationFilter` to run before `UsernamePasswordAuthenticationFilter` while allowing `/auth/**` endpoints to bypass authentication required careful `SecurityFilterChain` configuration.
+
+## Lessons Learned
+
+- The AWS EventStream protocol is a binary format — you need to handle big-endian byte ordering, CRC32 checksums, and message headers manually
+- Composable stream transforms in Dart are powerful — they make complex data pipelines readable and testable
+- `ddl-auto=validate` in production is the right choice — manage your schema separately, let Hibernate only validate
+- `@JsonIgnore` on bidirectional JPA relationships prevents infinite serialization loops
